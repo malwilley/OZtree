@@ -50,9 +50,13 @@ var timeout_ms = 10000; //allow 10 secs for wiki pages to load
 function sanitise_links(html, restrict_links, base_url) {
   var base_url =  ($('base', html) && $('base', html).attr('href'))?$('base', html).attr('href'):base_url;
   var origin = $('<a>').prop('href', base_url).prop('origin'); //get the host/port etc
-  //sanitize image sources
-  $('[src^="./"]', html).attr('src', function(i,attr) {return base_url + attr.substr(2);});
-  $('[src^="/"]', html).not('[src^="//"]').attr('src', function(i,attr) {return origin + attr;});
+  /* sanitize image sources. Safari doesn't like using non-https urls here, because 
+    "http://en.wikipedia.org/wiki/" redrects to the https site. So we need to replace
+    '^http://' or '^//' with 'https://' */
+  https_base = base_url.replace(/^(http:\/\/|\/\/)/,"https://");
+  https_origin = origin.replace(/^(http:\/\/|\/\/)/,"https://");
+  $('[src^="./"]', html).attr('src', function(i,attr) {return https_base + attr.substr(2);});
+  $('[src^="/"]', html).not('[src^="//"]').attr('src', function(i,attr) {return https_origin + attr;});
   //Any internal links need to be re-written to use scrollIntoView(), so that we don't change the URL by adding a hash
   $('[href^="#"]', html).click(function() {document.getElementById($(this).attr('href').substr(1)).scrollIntoView(); return false;});
   if (restrict_links>1) {
