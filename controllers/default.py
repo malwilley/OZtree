@@ -31,6 +31,7 @@ def time_diff(startTime,endTime):
 """Standard web2py stuff"""
 
 def index():
+    print('default.py')
     """
     Collect all information required for the home page
     """
