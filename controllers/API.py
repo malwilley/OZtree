@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import sys
 import re
+import json
+from random import random
 from OZfunctions import punctuation_to_space, __check_version, is_logographic, child_leaf_query
 from OZfunctions import ids_from_otts_string, nodes_info_from_string
 """
@@ -23,12 +25,23 @@ def version():
         return dict(version=None, error=v)
 
 
+def format_leaf(leaf):
+    return dict(
+        name=leaf[22],
+        id=leaf[0],
+        ott=leaf[5],
+        url=thumbnail_url(leaf[31], leaf[32])
+    )
+
+
 def format_node(node):
     return dict(
-        name=node[22],
+        name=node[6],
         id=node[0],
-        ott=node[5],
-        url=thumbnail_url(node[31], node[32])
+        age=node[7],
+        ott=node[8],
+        wikidata=node[8],
+        eol=node[10]
     )
 
 
@@ -39,23 +52,31 @@ def get_quiz_species():
         - use db abstraction layer instead of raw queries
         - ensure that branching_nodes_response returns two nodes that have the necessary number of valid leaves
         - allow user to pass in the parent node ID, right now it is hardcoded to chordata
-        - get best image available
+        - pass language to endpoint
         - disallow duplicate leaves
         - make algorithm "smarter"
         - feed popularity into orderby function
         """
         response.headers["Access-Control-Allow-Origin"] = '*'
 
+        parent_ott = request.vars.parent_ott
+
+        parent_node_response = db.executesql(
+            '''
+            select id, node_rgt from ordered_nodes where ott = {parent_ott}
+            '''.format(parent_ott=parent_ott)
+        )
+
         node_response = db.executesql(
             '''
             select id, parent, real_parent, node_rgt, leaf_lft, leaf_rgt, name, age, ott, popularity,
-            (select count(*) from ordered_nodes d where d.real_parent = a.id and d.leaf_rgt - d.leaf_lft > 10) as num_valid_children 
+            (select count(*) from ordered_nodes d where d.real_parent = a.id and d.leaf_rgt - d.leaf_lft > 10) as num_valid_children
             from ordered_nodes a
-            where id between 884807 and 889850 and popularity > 0
+            where id between {left_node_id} and {right_node_id} and popularity > 0
             having num_valid_children > 1
             order by power(popularity, 0.1) * rand() desc
             limit 1
-            '''
+            '''.format(left_node_id=parent_node_response[0][0], right_node_id=parent_node_response[0][1])
         )
         parent_node = node_response[0]
 
@@ -81,7 +102,7 @@ def get_quiz_species():
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on leaves.ott = images_by_ott.ott and best_any = 1 and images_by_ott.rating > 25000
             where leaves.id between {leaf_left} and {leaf_right}
-            group by leaves.ott 
+            group by leaves.ott
             order by power(parent_age + 1, 0.8) * rand() desc
             limit 1)
             union all
@@ -90,7 +111,7 @@ def get_quiz_species():
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on leaves.ott = images_by_ott.ott and best_any = 1 and images_by_ott.rating > 25000
             where leaves.id between {leaf_left} and {leaf_right}
-            group by leaves.ott 
+            group by leaves.ott
             order by power(parent_age + 1, 0.8) * rand() asc
             limit 1)
             '''.format(leaf_left=node_left[4], leaf_right=node_left[5])
@@ -103,19 +124,47 @@ def get_quiz_species():
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on leaves.ott = images_by_ott.ott and best_any = 1 and images_by_ott.rating > 25000
             where leaves.id between {leaf_left} and {leaf_right}
-            group by leaves.ott 
+            group by leaves.ott
             order by power((parent_age + 1) * (popularity / 100), 0.05) * rand() desc
             limit 1
             '''.format(leaf_left=node_right[4], leaf_right=node_right[5])
         )
 
-        print(dict(left_leaves_response=left_leaves_response,
-                   right_leaves_response=right_leaves_response))
+        rand = random()
+        leaf_1 = left_leaves_response[1] if rand > 0.5 else right_leaves_response[0]
+        leaf_2 = left_leaves_response[1] if rand <= 0.5 else right_leaves_response[0]
 
         return dict(
-            node_1=format_node(left_leaves_response[0]),
-            node_2=format_node(left_leaves_response[1]),
-            node_3=format_node(right_leaves_response[0])
+            leaf_compare=format_leaf(left_leaves_response[0]),
+            leaf_1=format_leaf(leaf_1),
+            leaf_2=format_leaf(leaf_2),
+        )
+    except Exception as e:
+        print(str(e))
+        raise HTTP(500)
+
+
+def nearest_common_ancestor():
+    response.headers["Access-Control-Allow-Origin"] = '*'
+
+    try:
+        leaves = json.loads(request.vars.leaves)
+
+        node = db((db.ordered_nodes.leaf_lft <=
+                   leaves[0]) & (db.ordered_nodes.leaf_rgt >=
+                                 leaves[0]) & (db.ordered_nodes.leaf_lft <=
+                                               leaves[1]) & (db.ordered_nodes.leaf_rgt >=
+                                                             leaves[1])).select(db.ordered_nodes.ALL, orderby=~db.ordered_nodes.id, limitby=(0, 1)).first()
+
+        if node is None:
+            return None
+
+        return dict(
+            id=node.id,
+            ott=node.ott,
+            eol=node.eol,
+            wikidata=node.wikidata,
+            age=node.age
         )
     except Exception as e:
         print(str(e))
