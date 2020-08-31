@@ -164,7 +164,8 @@ def nearest_common_ancestor():
             ott=node.ott,
             eol=node.eol,
             wikidata=node.wikidata,
-            age=node.age
+            age=node.age,
+            name=node.name
         )
     except Exception as e:
         print(str(e))
