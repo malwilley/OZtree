@@ -150,22 +150,34 @@ def nearest_common_ancestor():
     try:
         leaves = json.loads(request.vars.leaves)
 
-        node = db((db.ordered_nodes.leaf_lft <=
-                   leaves[0]) & (db.ordered_nodes.leaf_rgt >=
-                                 leaves[0]) & (db.ordered_nodes.leaf_lft <=
-                                               leaves[1]) & (db.ordered_nodes.leaf_rgt >=
-                                                             leaves[1])).select(db.ordered_nodes.ALL, orderby=~db.ordered_nodes.id, limitby=(0, 1)).first()
+        # todo: look at why query with Dhole and Wood fox does not return correct node:
+        # http://www.onezoom.org/life/@Cuon_alpinus=313163?img=best_any&anim=flight#x531,y512,w0.8928
+
+        node = db((db.ordered_nodes.leaf_lft <= leaves[0])
+                  & (db.ordered_nodes.leaf_rgt >= leaves[0])
+                  & (db.ordered_nodes.leaf_lft <= leaves[1])
+                  & (db.ordered_nodes.leaf_rgt
+                     >= leaves[1])
+                  & (db.vernacular_by_ott.preferred == 1)
+                  & (db.vernacular_by_ott.lang_primary == 'en')
+                  ).select(join=db.ordered_nodes.on(db.ordered_nodes.ott
+                                                    == db.vernacular_by_ott.ott),
+                           orderby=~db.ordered_nodes.id,
+                           limitby=(0, 1)).first()
+
+        print(node)
 
         if node is None:
             return None
 
         return dict(
-            id=node.id,
-            ott=node.ott,
-            eol=node.eol,
-            wikidata=node.wikidata,
-            age=node.age,
-            name=node.name
+            id=node.ordered_nodes.id,
+            ott=node.ordered_nodes.ott,
+            eol=node.ordered_nodes.eol,
+            wikidata=node.ordered_nodes.wikidata,
+            age=node.ordered_nodes.age,
+            name=node.ordered_nodes.name,
+            vernacular=node.vernacular_by_ott.vernacular
         )
     except Exception as e:
         print(str(e))
