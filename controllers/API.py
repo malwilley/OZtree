@@ -27,7 +27,8 @@ def version():
 
 def format_leaf(leaf):
     return dict(
-        name=leaf[22],
+        name=leaf[3],
+        vernacular=leaf[22],
         id=leaf[0],
         ott=leaf[5],
         url=thumbnail_url(leaf[31], leaf[32])
@@ -134,6 +135,8 @@ def get_quiz_species():
         leaf_1 = left_leaves_response[1] if rand > 0.5 else right_leaves_response[0]
         leaf_2 = left_leaves_response[1] if rand <= 0.5 else right_leaves_response[0]
 
+        print(leaf_1)
+
         return dict(
             leaf_compare=format_leaf(left_leaves_response[0]),
             leaf_1=format_leaf(leaf_1),
@@ -158,10 +161,9 @@ def nearest_common_ancestor():
                   & (db.ordered_nodes.leaf_lft <= leaves[1])
                   & (db.ordered_nodes.leaf_rgt
                      >= leaves[1])
-                  & (db.vernacular_by_ott.preferred == 1)
-                  & (db.vernacular_by_ott.lang_primary == 'en')
-                  ).select(join=db.ordered_nodes.on(db.ordered_nodes.ott
-                                                    == db.vernacular_by_ott.ott),
+                  & (db.ordered_nodes.real_parent >= 0)
+                  ).select(left=db.vernacular_by_ott.on(db.ordered_nodes.ott
+                                                        == db.vernacular_by_ott.ott),
                            orderby=~db.ordered_nodes.id,
                            limitby=(0, 1)).first()
 
