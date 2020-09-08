@@ -31,7 +31,8 @@ def format_leaf(leaf):
         vernacular=leaf[22],
         id=leaf[0],
         ott=leaf[5],
-        url=thumbnail_url(leaf[31], leaf[32])
+        url=thumbnail_url(leaf[31], leaf[32]),
+        iucn=leaf[48]
     )
 
 
@@ -58,6 +59,9 @@ def get_quiz_species():
         - make algorithm "smarter"
         - feed popularity into orderby function
         """
+
+        popularity_limit = 500
+
         response.headers["Access-Control-Allow-Origin"] = '*'
 
         parent_ott = request.vars.parent_ott
@@ -101,21 +105,23 @@ def get_quiz_species():
             (select *, (select age from ordered_nodes nodes where leaves.real_parent = id) as parent_age
             from ordered_leaves leaves
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
-            join images_by_ott on leaves.ott = images_by_ott.ott and best_any = 1 and images_by_ott.rating > 25000
-            where leaves.id between {leaf_left} and {leaf_right}
+            join images_by_ott on leaves.ott = images_by_ott.ott 
+            left join iucn on leaves.ott = iucn.ott 
+            where leaves.id between {leaf_left} and {leaf_right} and best_any = 1
             group by leaves.ott
-            order by power(parent_age + 1, 0.8) * rand() desc
+            order by power(IFNULL(parent_age, 0) + 1, 0.8) * rand() desc
             limit 1)
             union all
             (select *, (select age from ordered_nodes nodes where leaves.real_parent = id) as parent_age
             from ordered_leaves leaves
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
-            join images_by_ott on leaves.ott = images_by_ott.ott and best_any = 1 and images_by_ott.rating > 25000
-            where leaves.id between {leaf_left} and {leaf_right}
+            join images_by_ott on leaves.ott = images_by_ott.ott 
+            left join iucn on leaves.ott = iucn.ott 
+            where leaves.id between {leaf_left} and {leaf_right} and best_any = 1
             group by leaves.ott
-            order by power(parent_age + 1, 0.8) * rand() asc
+            order by power(IFNULL(parent_age, 100) + 1, 0.8) * rand() asc
             limit 1)
-            '''.format(leaf_left=node_left[4], leaf_right=node_left[5])
+            '''.format(leaf_left=node_left[4], leaf_right=node_left[5], popularity_limit=popularity_limit)
         )
 
         right_leaves_response = db.executesql(
@@ -123,12 +129,13 @@ def get_quiz_species():
             select *, (select age from ordered_nodes nodes where leaves.real_parent = id) as parent_age
             from ordered_leaves leaves
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
-            join images_by_ott on leaves.ott = images_by_ott.ott and best_any = 1 and images_by_ott.rating > 25000
-            where leaves.id between {leaf_left} and {leaf_right}
+            join images_by_ott on leaves.ott = images_by_ott.ott
+            left join iucn on leaves.ott = iucn.ott 
+            where leaves.id between {leaf_left} and {leaf_right} and best_any = 1
             group by leaves.ott
-            order by power((parent_age + 1) * (popularity / 100), 0.05) * rand() desc
+            order by power((IFNULL(parent_age, 0) + 1) * (popularity / 100), 0.05) * rand() desc
             limit 1
-            '''.format(leaf_left=node_right[4], leaf_right=node_right[5])
+            '''.format(leaf_left=node_right[4], leaf_right=node_right[5], popularity_limit=popularity_limit)
         )
 
         rand = random()
@@ -162,6 +169,8 @@ def nearest_common_ancestor():
                   & (db.ordered_nodes.leaf_rgt
                      >= leaves[1])
                   & (db.ordered_nodes.real_parent >= 0)
+                  & ((db.vernacular_by_ott.lang_primary == "en") | (db.vernacular_by_ott.lang_primary == None))
+                  & ((db.vernacular_by_ott.preferred == True) | (db.vernacular_by_ott.preferred == None))
                   ).select(left=db.vernacular_by_ott.on(db.ordered_nodes.ott
                                                         == db.vernacular_by_ott.ott),
                            orderby=~db.ordered_nodes.id,
