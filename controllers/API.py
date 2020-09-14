@@ -66,83 +66,79 @@ def get_quiz_species():
 
         parent_ott = request.vars.parent_ott
 
-        parent_node_response = db.executesql(
-            '''
-            select id, node_rgt from ordered_nodes where ott = {parent_ott}
-            '''.format(parent_ott=parent_ott)
-        )
+        top_level_node = db(db.ordered_nodes.ott ==
+                            parent_ott).select().first()
 
+        print("1")
         node_response = db.executesql(
             '''
             select id, parent, real_parent, node_rgt, leaf_lft, leaf_rgt, name, age, ott, popularity,
-            (select count(*) from ordered_nodes d where d.real_parent = a.id and d.leaf_rgt - d.leaf_lft > 10) as num_valid_children
+            (select count(*) from ordered_nodes d where d.real_parent = a.id and d.leaf_rgt - d.leaf_lft > 1) as num_valid_children
             from ordered_nodes a
             where id between {left_node_id} and {right_node_id} and popularity > 0
             having num_valid_children > 1
             order by power(popularity, 0.1) * rand() desc
             limit 1
-            '''.format(left_node_id=parent_node_response[0][0], right_node_id=parent_node_response[0][1])
+            '''.format(left_node_id=top_level_node.id, right_node_id=top_level_node.node_rgt)
         )
         parent_node = node_response[0]
+        parent_node_id = parent_node[0]
 
-        branching_nodes_response = db.executesql(
-            '''
-            select distinct * from ordered_nodes
-            where real_parent = {parent_node_id}
-            order by rand()
-            limit 2
-            '''.format(parent_node_id=parent_node[0])
-        )
+        print("2")
 
-        node_left = branching_nodes_response[0]
-        node_right = branching_nodes_response[1]
+        # todo: make sure that children are really valid (have pic and vernacular)
+        # same for above query
+        (node_left, node_right) = db((db.ordered_nodes.real_parent ==
+                                      parent_node_id) & (db.ordered_nodes.leaf_rgt - db.ordered_nodes.leaf_lft > 1)).select(orderby='<random>', limitby=(0, 2))
 
-        print(dict(parent_node_id=parent_node[0]))
+        print("3")
 
         # todo: can be duplicates here
+        # todo: don't weight id as much
         left_leaves_response = db.executesql(
             '''
-            (select *, (select age from ordered_nodes nodes where leaves.real_parent = id) as parent_age
+            (select *, (power(leaves.popularity, .1) * power(leaves.id - {leaf_left} + 1, 1)) as score 
             from ordered_leaves leaves
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on leaves.ott = images_by_ott.ott 
             left join iucn on leaves.ott = iucn.ott 
             where leaves.id between {leaf_left} and {leaf_right} and best_any = 1
             group by leaves.ott
-            order by power(IFNULL(parent_age, 0) + 1, 0.8) * rand() desc
+            order by score * rand() desc
             limit 1)
             union all
-            (select *, (select age from ordered_nodes nodes where leaves.real_parent = id) as parent_age
+            (select *, (power(leaves.popularity, .1) * power(leaves.id - {leaf_left} + 1, -1)) as score
             from ordered_leaves leaves
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on leaves.ott = images_by_ott.ott 
             left join iucn on leaves.ott = iucn.ott 
             where leaves.id between {leaf_left} and {leaf_right} and best_any = 1
             group by leaves.ott
-            order by power(IFNULL(parent_age, 100) + 1, 0.8) * rand() asc
+            order by score * rand() desc
             limit 1)
-            '''.format(leaf_left=node_left[4], leaf_right=node_left[5], popularity_limit=popularity_limit)
+            '''.format(leaf_left=node_left.leaf_lft, leaf_right=node_left.leaf_rgt, popularity_limit=popularity_limit)
         )
+        print("4")
 
         right_leaves_response = db.executesql(
             '''
-            select *, (select age from ordered_nodes nodes where leaves.real_parent = id) as parent_age
+            select *, (power(leaves.popularity, .1) * power(leaves.id - {leaf_left} + 1, -1)) as score
             from ordered_leaves leaves
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on leaves.ott = images_by_ott.ott
             left join iucn on leaves.ott = iucn.ott 
             where leaves.id between {leaf_left} and {leaf_right} and best_any = 1
             group by leaves.ott
-            order by power((IFNULL(parent_age, 0) + 1) * (popularity / 100), 0.05) * rand() desc
+            order by score * rand() desc
             limit 1
-            '''.format(leaf_left=node_right[4], leaf_right=node_right[5], popularity_limit=popularity_limit)
+            '''.format(leaf_left=node_right.leaf_lft, leaf_right=node_right.leaf_rgt, popularity_limit=popularity_limit)
         )
 
         rand = random()
         leaf_1 = left_leaves_response[1] if rand > 0.5 else right_leaves_response[0]
         leaf_2 = left_leaves_response[1] if rand <= 0.5 else right_leaves_response[0]
 
-        print(leaf_1)
+        print("5")
 
         return dict(
             leaf_compare=format_leaf(left_leaves_response[0]),
