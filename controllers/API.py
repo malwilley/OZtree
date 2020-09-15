@@ -77,7 +77,7 @@ def get_quiz_species():
             from ordered_nodes a
             where id between {left_node_id} and {right_node_id} and popularity > 0
             having num_valid_children > 1
-            order by power(popularity, 0.1) * rand() desc
+            order by power(popularity, 0.01) * rand() desc
             limit 1
             '''.format(left_node_id=top_level_node.id, right_node_id=top_level_node.node_rgt)
         )
@@ -94,44 +94,46 @@ def get_quiz_species():
         print("3")
 
         # todo: can be duplicates here
-        # todo: don't weight id as much
         left_leaves_response = db.executesql(
             '''
-            (select *, (power(leaves.popularity, .1) * power(leaves.id - {leaf_left} + 1, 1)) as score 
+            (select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) * ((leaves.id - {leaf_left} + 1) / ({leaf_right} - {leaf_right})), 0.01) as score
             from ordered_leaves leaves
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on leaves.ott = images_by_ott.ott 
             left join iucn on leaves.ott = iucn.ott 
+            join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
             where leaves.id between {leaf_left} and {leaf_right} and best_any = 1
             group by leaves.ott
             order by score * rand() desc
             limit 1)
             union all
-            (select *, (power(leaves.popularity, .1) * power(leaves.id - {leaf_left} + 1, -1)) as score
+            (select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) / ((leaves.id - {leaf_left} + 1) / ({leaf_right} - {leaf_left})), 0.01) as score
             from ordered_leaves leaves
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on leaves.ott = images_by_ott.ott 
             left join iucn on leaves.ott = iucn.ott 
+            join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
             where leaves.id between {leaf_left} and {leaf_right} and best_any = 1
             group by leaves.ott
             order by score * rand() desc
             limit 1)
-            '''.format(leaf_left=node_left.leaf_lft, leaf_right=node_left.leaf_rgt, popularity_limit=popularity_limit)
+            '''.format(leaf_left=node_left.leaf_lft, leaf_right=node_left.leaf_rgt)
         )
         print("4")
 
         right_leaves_response = db.executesql(
             '''
-            select *, (power(leaves.popularity, .1) * power(leaves.id - {leaf_left} + 1, -1)) as score
+            select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) / ((leaves.id - {leaf_left} + 1) / ({leaf_right} - {leaf_left})), 0.01) as score
             from ordered_leaves leaves
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on leaves.ott = images_by_ott.ott
             left join iucn on leaves.ott = iucn.ott 
+            join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
             where leaves.id between {leaf_left} and {leaf_right} and best_any = 1
             group by leaves.ott
             order by score * rand() desc
             limit 1
-            '''.format(leaf_left=node_right.leaf_lft, leaf_right=node_right.leaf_rgt, popularity_limit=popularity_limit)
+            '''.format(leaf_left=node_right.leaf_lft, leaf_right=node_right.leaf_rgt)
         )
 
         rand = random()
