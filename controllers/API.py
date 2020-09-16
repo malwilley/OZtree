@@ -96,7 +96,7 @@ def get_quiz_species():
         # todo: can be duplicates here
         left_leaves_response = db.executesql(
             '''
-            (select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) * ((leaves.id - {leaf_left} + 1) / ({leaf_right} - {leaf_right})), 0.01) as score
+            (select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) * ((leaves.id - {leaf_left} + 1) / ({leaf_right} - {leaf_left})), 0.5) as score
             from ordered_leaves leaves
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on leaves.ott = images_by_ott.ott 
@@ -107,7 +107,7 @@ def get_quiz_species():
             order by score * rand() desc
             limit 1)
             union all
-            (select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) / ((leaves.id - {leaf_left} + 1) / ({leaf_right} - {leaf_left})), 0.01) as score
+            (select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) * (1 - ((leaves.id - {leaf_left} - 1) / ({leaf_right} - {leaf_left}))), 0.5) as score
             from ordered_leaves leaves
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on leaves.ott = images_by_ott.ott 
@@ -123,7 +123,7 @@ def get_quiz_species():
 
         right_leaves_response = db.executesql(
             '''
-            select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) / ((leaves.id - {leaf_left} + 1) / ({leaf_right} - {leaf_left})), 0.01) as score
+            select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) * (1 - ((leaves.id - {leaf_left} - 1) / ({leaf_right} - {leaf_left}))), 0.5) as score
             from ordered_leaves leaves
             join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on leaves.ott = images_by_ott.ott
