@@ -28,10 +28,10 @@ def version():
 def format_leaf(leaf):
     return dict(
         name=leaf[3],
-        vernacular=leaf[22],
+        vernacular=leaf[23],
         id=leaf[0],
         ott=leaf[5],
-        url=thumbnail_url(leaf[31], leaf[32]),
+        url=thumbnail_url(leaf[32], leaf[33]),
         iucn=leaf[48]
     )
 
@@ -94,6 +94,7 @@ def get_quiz_species():
         print("3")
 
         # todo: can be duplicates here
+        # todo: `join vernacular_by_ott on`... can result in multiple results per ott
         left_leaves_response = db.executesql(
             '''
             (select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) * ((leaves.id - {leaf_left} + 1) / ({leaf_right} - {leaf_left})), 0.5) as score
@@ -140,7 +141,7 @@ def get_quiz_species():
         leaf_1 = left_leaves_response[1] if rand > 0.5 else right_leaves_response[0]
         leaf_2 = left_leaves_response[1] if rand <= 0.5 else right_leaves_response[0]
 
-        print("5")
+        print(leaf_1)
 
         return dict(
             leaf_compare=format_leaf(left_leaves_response[0]),
