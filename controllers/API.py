@@ -32,7 +32,7 @@ def format_leaf(leaf):
         id=leaf[0],
         ott=leaf[5],
         url=thumbnail_url(leaf[32], leaf[33]),
-        iucn=leaf[48]
+        iucn=leaf[49]
     )
 
 
@@ -157,37 +157,47 @@ def nearest_common_ancestor():
     response.headers["Access-Control-Allow-Origin"] = '*'
 
     try:
+        print('here I am!')
         leaves = json.loads(request.vars.leaves)
 
         # todo: look at why query with Dhole and Wood fox does not return correct node:
         # http://www.onezoom.org/life/@Cuon_alpinus=313163?img=best_any&anim=flight#x531,y512,w0.8928
 
-        node = db((db.ordered_nodes.leaf_lft <= leaves[0])
-                  & (db.ordered_nodes.leaf_rgt >= leaves[0])
-                  & (db.ordered_nodes.leaf_lft <= leaves[1])
-                  & (db.ordered_nodes.leaf_rgt
-                     >= leaves[1])
-                  & (db.ordered_nodes.real_parent >= 0)
-                  & ((db.vernacular_by_ott.lang_primary == "en") | (db.vernacular_by_ott.lang_primary == None))
-                  & ((db.vernacular_by_ott.preferred == True) | (db.vernacular_by_ott.preferred == None))
-                  ).select(left=db.vernacular_by_ott.on(db.ordered_nodes.ott
-                                                        == db.vernacular_by_ott.ott),
-                           orderby=~db.ordered_nodes.id,
-                           limitby=(0, 1)).first()
+        node_response = db.executesql(
+            '''
+            select n.id, n.ott, n.age, n.name, v.vernacular
+            from (
+                select n.id, n.ott, n.age, n.name
+                from ordered_leaves l
+                left join ordered_nodes n
+                on MBRIntersects(Point(0, l.id), n.leaves)
+                where l.id = {leaf2_id}
+                intersect
+                select n.id, n.ott, n.age, n.name
+                from ordered_leaves l
+                left join ordered_nodes n
+                on MBRIntersects(Point(0, l.id), n.leaves)
+                where l.id = {leaf1_id}
+                order by id desc
+                limit 1
+            ) n
+            left join vernacular_by_ott v on v.ott = n.ott and v.lang_primary = 'en'
+            '''.format(leaf1_id=leaves[0], leaf2_id=leaves[1])
+        )
 
-        print(node)
+        print(node_response)
+
+        node = node_response[0]
 
         if node is None:
             return None
 
         return dict(
-            id=node.ordered_nodes.id,
-            ott=node.ordered_nodes.ott,
-            eol=node.ordered_nodes.eol,
-            wikidata=node.ordered_nodes.wikidata,
-            age=node.ordered_nodes.age,
-            name=node.ordered_nodes.name,
-            vernacular=node.vernacular_by_ott.vernacular
+            id=node[0],
+            ott=node[1],
+            age=node[2],
+            name=node[3],
+            vernacular=node[4]
         )
     except Exception as e:
         print(str(e))
