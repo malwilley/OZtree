@@ -219,6 +219,7 @@ db.define_table('ordered_leaves',
     
     #all the remaining fields are not filled out in the original data tables, but are filled out by later algorithms
     Field('price', type='integer'), #price in pence. Should not use floating point type because we want to group by this at some 
+    Field('valid_quiz_leaf', type='boolean'), #necessary for performance. true if leaf has an image
     format = '%(ott)s')
 
 # csv file for ordered nodes allowing sets of leaves to be recovered using a nested
@@ -284,6 +285,7 @@ db.define_table('ordered_nodes',
     Field('iucnEX', type='integer'),
     Field('popleaf', type='integer'), #most popular leaf (index into ordered_leaves)
     Field('popleaf_ott', type='integer'), #ott (if present) of most popular leaf above (to speed up lookups)
+    Field('num_quiz_leaves', type='integer'), #number of leaves which are valid for quiz games
     format = '%(ott)s')
 
 # tables for common names - one name per line (allows multiple names for the same taxon)

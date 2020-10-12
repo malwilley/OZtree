@@ -27,12 +27,12 @@ def version():
 
 def format_leaf(leaf):
     return dict(
-        name=leaf[3],
-        vernacular=leaf[23],
         id=leaf[0],
-        ott=leaf[5],
-        url=thumbnail_url(leaf[32], leaf[33]),
-        iucn=leaf[49]
+        ott=leaf[1],
+        name=leaf[2],
+        vernacular=leaf[3],
+        iucn=leaf[4],
+        url=thumbnail_url(leaf[5], leaf[6])
     )
 
 
@@ -73,9 +73,9 @@ def get_quiz_species():
         node_response = db.executesql(
             '''
             select id, parent, real_parent, node_rgt, leaf_lft, leaf_rgt, name, age, ott, popularity,
-            (select count(*) from ordered_nodes d where d.real_parent = a.id and d.leaf_rgt - d.leaf_lft > 1) as num_valid_children
+            (select count(*) from ordered_nodes d where d.real_parent = a.id and d.num_quiz_leaves > 0) as num_valid_children
             from ordered_nodes a
-            where id between {left_node_id} and {right_node_id} and popularity > 0
+            where id between {left_node_id} and {right_node_id} and popularity > 0 and real_parent > 0
             having num_valid_children > 1
             order by power(popularity, 0.01) * rand() desc
             limit 1
@@ -89,7 +89,7 @@ def get_quiz_species():
         # todo: make sure that children are really valid (have pic and vernacular)
         # same for above query
         (node_left, node_right) = db((db.ordered_nodes.real_parent ==
-                                      parent_node_id) & (db.ordered_nodes.leaf_rgt - db.ordered_nodes.leaf_lft > 1)).select(orderby='<random>', limitby=(0, 2))
+                                      parent_node_id) & (db.ordered_nodes.num_quiz_leaves > 0)).select(orderby='<random>', limitby=(0, 2))
 
         print("3")
 
@@ -97,41 +97,50 @@ def get_quiz_species():
         # todo: `join vernacular_by_ott on`... can result in multiple results per ott
         left_leaves_response = db.executesql(
             '''
-            (select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) * ((leaves.id - {leaf_left} + 1) / ({leaf_right} - {leaf_left})), 0.5) as score
-            from ordered_leaves leaves
-            join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
-            join images_by_ott on leaves.ott = images_by_ott.ott 
-            left join iucn on leaves.ott = iucn.ott 
-            join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
-            where leaves.id between {leaf_left} and {leaf_right} and best_any = 1
-            group by leaves.ott
-            order by score * rand() desc
-            limit 1)
-            union all
-            (select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) * (1 - ((leaves.id - {leaf_left} - 1) / ({leaf_right} - {leaf_left}))), 0.5) as score
-            from ordered_leaves leaves
-            join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
-            join images_by_ott on leaves.ott = images_by_ott.ott 
-            left join iucn on leaves.ott = iucn.ott 
-            join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
-            where leaves.id between {leaf_left} and {leaf_right} and best_any = 1
-            group by leaves.ott
-            order by score * rand() desc
-            limit 1)
+            select * from (
+                (
+                    select l1.id, l1.ott, l1.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l1.popularity - min_popularity + 1) / (max_popularity - min_popularity)), 0.5) as score
+                    from ordered_leaves l1
+                    join vernacular_by_ott on (l1.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
+                    join images_by_ott on l1.ott = images_by_ott.ott 
+                    left join iucn on l1.ott = iucn.ott 
+                    join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
+                    where valid_quiz_leaf = 1 and l1.id between {leaf_left} and {leaf_right} and best_any = 1
+                    group by l1.ott
+                    order by score * rand() desc
+                    limit 2
+                )
+                union distinct 
+                (
+                    select l2.id, l2.ott, l2.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l2.popularity - min_popularity + 1) / (max_popularity - min_popularity)), 0.5) as score
+                    from ordered_leaves l2
+                    join vernacular_by_ott on (l2.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
+                    join images_by_ott on l2.ott = images_by_ott.ott 
+                    left join iucn on l2.ott = iucn.ott 
+                    join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
+                    where valid_quiz_leaf = 1 and l2.id between {leaf_left} and {leaf_right} and best_any = 1
+                    group by l2.ott
+                    order by score * rand() desc
+                    limit 2
+                )
+            ) l
+            limit 2
             '''.format(leaf_left=node_left.leaf_lft, leaf_right=node_left.leaf_rgt)
         )
+
+        print(left_leaves_response)
         print("4")
 
         right_leaves_response = db.executesql(
             '''
-            select *, power(((leaves.popularity - min_popularity + 1) / (max_popularity - min_popularity)) * (1 - ((leaves.id - {leaf_left} - 1) / ({leaf_right} - {leaf_left}))), 0.5) as score
-            from ordered_leaves leaves
-            join vernacular_by_ott on (leaves.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
-            join images_by_ott on leaves.ott = images_by_ott.ott
-            left join iucn on leaves.ott = iucn.ott 
+            select l2.id, l2.ott, l2.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l2.popularity - min_popularity + 1) / (max_popularity - min_popularity)), 0.5) as score
+            from ordered_leaves l2
+            join vernacular_by_ott on (l2.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
+            join images_by_ott on l2.ott = images_by_ott.ott 
+            left join iucn on l2.ott = iucn.ott 
             join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
-            where leaves.id between {leaf_left} and {leaf_right} and best_any = 1
-            group by leaves.ott
+            where valid_quiz_leaf = 1 and l2.id between {leaf_left} and {leaf_right} and best_any = 1
+            group by l2.ott
             order by score * rand() desc
             limit 1
             '''.format(leaf_left=node_right.leaf_lft, leaf_right=node_right.leaf_rgt)
