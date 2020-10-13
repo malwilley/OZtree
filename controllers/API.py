@@ -73,7 +73,7 @@ def get_quiz_species():
         node_response = db.executesql(
             '''
             select id, parent, real_parent, node_rgt, leaf_lft, leaf_rgt, name, age, ott, popularity,
-            (select count(*) from ordered_nodes d where d.real_parent = a.id and d.num_quiz_leaves > 0) as num_valid_children
+            (select count(*) from ordered_nodes d where d.real_parent = a.id and d.num_quiz_leaves > 1) as num_valid_children
             from ordered_nodes a
             where id between {left_node_id} and {right_node_id} and popularity > 0 and real_parent > 0
             having num_valid_children > 1
@@ -83,14 +83,17 @@ def get_quiz_species():
         )
         parent_node = node_response[0]
         parent_node_id = parent_node[0]
-
+        print(parent_node)
+        print(parent_node_id)
         print("2")
 
         # todo: make sure that children are really valid (have pic and vernacular)
         # same for above query
         (node_left, node_right) = db((db.ordered_nodes.real_parent ==
-                                      parent_node_id) & (db.ordered_nodes.num_quiz_leaves > 0)).select(orderby='<random>', limitby=(0, 2))
+                                      parent_node_id) & (db.ordered_nodes.num_quiz_leaves > 1)).select(orderby='<random>', limitby=(0, 2))
 
+        print(node_left)
+        print(node_right)
         print("3")
 
         # todo: can be duplicates here
@@ -101,8 +104,8 @@ def get_quiz_species():
                 (
                     select l1.id, l1.ott, l1.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l1.popularity - min_popularity + 1) / (max_popularity - min_popularity)), 0.5) as score
                     from ordered_leaves l1
-                    join vernacular_by_ott on (l1.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
                     join images_by_ott on l1.ott = images_by_ott.ott 
+                    left join vernacular_by_ott on (l1.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
                     left join iucn on l1.ott = iucn.ott 
                     join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
                     where valid_quiz_leaf = 1 and l1.id between {leaf_left} and {leaf_right} and best_any = 1
@@ -114,8 +117,8 @@ def get_quiz_species():
                 (
                     select l2.id, l2.ott, l2.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l2.popularity - min_popularity + 1) / (max_popularity - min_popularity)), 0.5) as score
                     from ordered_leaves l2
-                    join vernacular_by_ott on (l2.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
                     join images_by_ott on l2.ott = images_by_ott.ott 
+                    left join vernacular_by_ott on (l2.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
                     left join iucn on l2.ott = iucn.ott 
                     join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
                     where valid_quiz_leaf = 1 and l2.id between {leaf_left} and {leaf_right} and best_any = 1
@@ -135,8 +138,8 @@ def get_quiz_species():
             '''
             select l2.id, l2.ott, l2.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l2.popularity - min_popularity + 1) / (max_popularity - min_popularity)), 0.5) as score
             from ordered_leaves l2
-            join vernacular_by_ott on (l2.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             join images_by_ott on l2.ott = images_by_ott.ott 
+            left join vernacular_by_ott on (l2.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
             left join iucn on l2.ott = iucn.ott 
             join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
             where valid_quiz_leaf = 1 and l2.id between {leaf_left} and {leaf_right} and best_any = 1
