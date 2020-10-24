@@ -179,17 +179,13 @@ def nearest_common_ancestor():
             '''
             select n.id, n.ott, n.age, n.name, v.vernacular
             from (
-                select n.id, n.ott, n.age, n.name
-                from ordered_leaves l
-                left join ordered_nodes n
-                on MBRIntersects(Point(0, l.id), n.leaves)
-                where l.id = {leaf2_id}
+                select id, ott, age, name
+                from ordered_nodes
+                where MBRIntersects(Point(0, {leaf2_id}), leaves)
                 intersect
-                select n.id, n.ott, n.age, n.name
-                from ordered_leaves l
-                left join ordered_nodes n
-                on MBRIntersects(Point(0, l.id), n.leaves)
-                where l.id = {leaf1_id}
+                select id, ott, age, name
+                from ordered_nodes
+                where MBRIntersects(Point(0, {leaf1_id}), leaves)
                 order by id desc
                 limit 1
             ) n
