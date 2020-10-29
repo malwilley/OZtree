@@ -96,39 +96,53 @@ def get_quiz_species():
         print(node_right)
         print("3")
 
+        left_leaf_data_response = db.executesql(
+            '''
+            select min(quiz_leaves_by_ott.depth), max(quiz_leaves_by_ott.depth), min(ordered_leaves.popularity), max(ordered_leaves.popularity) 
+            from ordered_nodes
+            join quiz_leaves_by_ott on quiz_leaves_by_ott.leaf_id between {leaf_left} and {leaf_right}
+            join ordered_leaves on ordered_leaves.id = quiz_leaves_by_ott.leaf_id
+            where ordered_nodes.id = {node_id}
+            '''.format(node_id=node_left.id, leaf_left=node_left.leaf_lft, leaf_right=node_left.leaf_rgt)
+        )
+
+        min_depth, max_depth, min_popularity, max_popularity = left_leaf_data_response[0]
+
+        print(min_depth, max_depth, min_popularity, max_popularity)
+
         # todo: can be duplicates here
         # todo: `join vernacular_by_ott on`... can result in multiple results per ott
         left_leaves_response = db.executesql(
             '''
             select * from (
                 (
-                    select l1.id, l1.ott, l1.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l1.popularity - min_popularity + 1) / (max_popularity - min_popularity)), 0.5) as score
+                    select distinct l1.id, l1.ott, l1.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l1.popularity - {min_popularity} + 1) / ({max_popularity} - {min_popularity})) * ((l1.depth - {min_depth} + 1) / ({max_depth} - {min_depth})), 1) as score
                     from ordered_leaves l1
+                    join quiz_leaves_by_ott on quiz_leaves_by_ott.leaf_id = l1.id
                     join images_by_ott on l1.ott = images_by_ott.ott 
                     left join vernacular_by_ott on (l1.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
                     left join iucn on l1.ott = iucn.ott 
-                    join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
-                    where valid_quiz_leaf = 1 and l1.id between {leaf_left} and {leaf_right} and best_any = 1
+                    where l1.id between {leaf_left} and {leaf_right} and best_any = 1
                     group by l1.ott
                     order by score * rand() desc
                     limit 2
                 )
                 union distinct 
                 (
-                    select l2.id, l2.ott, l2.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l2.popularity - min_popularity + 1) / (max_popularity - min_popularity)), 0.5) as score
+                    select distinct l2.id, l2.ott, l2.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l2.popularity - {min_popularity} + 1) / ({max_popularity} - {min_popularity})) * (1 - ((l2.depth - {min_depth} - 1) / ({max_depth} - {min_depth}))), 0.5) as score
                     from ordered_leaves l2
+                    join quiz_leaves_by_ott on quiz_leaves_by_ott.leaf_id = l2.id
                     join images_by_ott on l2.ott = images_by_ott.ott 
                     left join vernacular_by_ott on (l2.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
                     left join iucn on l2.ott = iucn.ott 
-                    join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
-                    where valid_quiz_leaf = 1 and l2.id between {leaf_left} and {leaf_right} and best_any = 1
+                    where l2.id between {leaf_left} and {leaf_right} and best_any = 1
                     group by l2.ott
                     order by score * rand() desc
                     limit 2
                 )
             ) l
             limit 2
-            '''.format(leaf_left=node_left.leaf_lft, leaf_right=node_left.leaf_rgt)
+            '''.format(leaf_left=node_left.leaf_lft, leaf_right=node_left.leaf_rgt, min_depth=min_depth, max_depth=max_depth, min_popularity=min_popularity, max_popularity=max_popularity)
         )
 
         print(left_leaves_response)
