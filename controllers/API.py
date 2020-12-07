@@ -53,11 +53,9 @@ def get_quiz_species():
         TODO
         - use db abstraction layer instead of raw queries
         - ensure that branching_nodes_response returns two nodes that have the necessary number of valid leaves
-        - allow user to pass in the parent node ID, right now it is hardcoded to chordata
         - pass language to endpoint
         - disallow duplicate leaves
         - make algorithm "smarter"
-        - feed popularity into orderby function
         """
 
         popularity_limit = 500
@@ -70,6 +68,7 @@ def get_quiz_species():
                             parent_ott).select().first()
 
         print("1")
+        # Find a parent node which has at least two direct valid quiz nodes
         node_response = db.executesql(
             '''
             select a.id, parent, real_parent, node_rgt, leaf_lft, leaf_rgt, name, age, ott, popularity, 
@@ -78,7 +77,7 @@ def get_quiz_species():
             join quiz_nodes q on q.node_id = a.id
             where a.id between {left_node_id} and {right_node_id} and popularity > 0 and real_parent >= 0
             having num_valid_children > 1
-            order by power(popularity, 0.01) * rand() desc
+            order by power(popularity, 0.05) * rand() desc
             limit 1
             '''.format(left_node_id=top_level_node.id, right_node_id=top_level_node.node_rgt)
         )
@@ -88,8 +87,7 @@ def get_quiz_species():
         print(parent_node_id)
         print("2")
 
-        # todo: make sure that children are really valid (have pic and vernacular)
-        # same for above query
+        # Pick two valid child nodes of the previously selected node
         (node_left, node_right) = db((db.ordered_nodes.real_parent ==
                                       parent_node_id) & (db.ordered_nodes.num_quiz_leaves > 1)).select(orderby='<random>', limitby=(0, 2))
 
@@ -97,6 +95,7 @@ def get_quiz_species():
         print(node_right)
         print("3")
 
+        # get some info on leaves descending from node_left
         left_leaf_data_response = db.executesql(
             '''
             select min(quiz_leaves_by_ott.depth), max(quiz_leaves_by_ott.depth), min(ordered_leaves.popularity), max(ordered_leaves.popularity) 
@@ -111,42 +110,40 @@ def get_quiz_species():
 
         print(min_depth, max_depth, min_popularity, max_popularity)
 
-        # todo: can be duplicates here
         # todo: `join vernacular_by_ott on`... can result in multiple results per ott
-        left_leaves_response = db.executesql(
+        leaf_1_response = db.executesql(
             '''
-            select * from (
-                (
-                    select distinct l1.id, l1.ott, l1.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l1.popularity - {min_popularity} + 1) / ({max_popularity} - {min_popularity})) * ((q.depth - {min_depth}) / ({max_depth} - {min_depth})), 0.5) as score
-                    from ordered_leaves l1
-                    join quiz_leaves_by_ott q on q.leaf_id = l1.id
-                    join images_by_ott on l1.ott = images_by_ott.ott 
-                    left join vernacular_by_ott on (l1.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
-                    left join iucn on l1.ott = iucn.ott 
-                    where l1.id between {leaf_left} and {leaf_right} and best_any = 1
-                    order by score * rand() desc
-                    limit 2
-                )
-                union distinct 
-                (
-                    select distinct l2.id, l2.ott, l2.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l2.popularity - {min_popularity} + 1) / ({max_popularity} - {min_popularity})) * (1 - ((q.depth - {min_depth}) / ({max_depth} - {min_depth}))), 0.5) as score
-                    from ordered_leaves l2
-                    join quiz_leaves_by_ott q on q.leaf_id = l2.id
-                    join images_by_ott on l2.ott = images_by_ott.ott 
-                    left join vernacular_by_ott on (l2.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
-                    left join iucn on l2.ott = iucn.ott 
-                    where l2.id between {leaf_left} and {leaf_right} and best_any = 1
-                    order by score * rand() desc
-                    limit 2
-                )
-            ) l
-            limit 2
+            select distinct l1.id, l1.ott, l1.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l1.popularity - {min_popularity} + 1) / ({max_popularity} - {min_popularity})) + 2 * ((q.depth - {min_depth}) / ({max_depth} - {min_depth})), 0.5) as score
+            from ordered_leaves l1
+            join quiz_leaves_by_ott q on q.leaf_id = l1.id
+            join images_by_ott on l1.ott = images_by_ott.ott 
+            left join vernacular_by_ott on (l1.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
+            left join iucn on l1.ott = iucn.ott 
+            where l1.id between {leaf_left} and {leaf_right} and best_any = 1
+            group by l1.ott
+            order by rand() * score desc
+            limit 1
             '''.format(leaf_left=node_left.leaf_lft, leaf_right=node_left.leaf_rgt, min_depth=min_depth, max_depth=max_depth, min_popularity=min_popularity, max_popularity=max_popularity)
         )
 
-        print(left_leaves_response)
+        leaf_2_response = db.executesql(
+            '''
+            select distinct l2.id, l2.ott, l2.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l2.popularity - {min_popularity} + 1) / ({max_popularity} - {min_popularity})) + 2 * (1 - ((q.depth - {min_depth}) / ({max_depth} - {min_depth}))), 0.5) as score
+            from ordered_leaves l2
+            join quiz_leaves_by_ott q on q.leaf_id = l2.id
+            join images_by_ott on l2.ott = images_by_ott.ott 
+            left join vernacular_by_ott on (l2.ott = vernacular_by_ott.ott and vernacular_by_ott.lang_primary = 'en' and vernacular_by_ott.preferred = 1)
+            left join iucn on l2.ott = iucn.ott 
+            where l2.id between {leaf_left} and {leaf_right} and best_any = 1 and l2.id != {leaf_1_id}
+            group by l2.ott
+            order by rand() * score desc
+            limit 1
+            '''.format(leaf_1_id=leaf_1_response[0][0], leaf_left=node_left.leaf_lft, leaf_right=node_left.leaf_rgt, min_depth=min_depth, max_depth=max_depth, min_popularity=min_popularity, max_popularity=max_popularity)
+        )
+
         print("4")
 
+        # get some info on leaves descending from node_right
         right_leaf_data_response = db.executesql(
             '''
             select min(quiz_leaves_by_ott.depth), max(quiz_leaves_by_ott.depth), min(ordered_leaves.popularity), max(ordered_leaves.popularity) 
@@ -163,7 +160,7 @@ def get_quiz_species():
 
         right_leaves_response = db.executesql(
             '''
-            select l.id, l.ott, l.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l.popularity - {min_popularity} + 1) / ({max_popularity} - {min_popularity})) * (1 - ((q.depth - {min_depth}) / ({max_depth} - {min_depth}))), 0.5) as score
+            select l.id, l.ott, l.name, vernacular_by_ott.vernacular, iucn.status_code, images_by_ott.src, images_by_ott.src_id, power(((l.popularity - {min_popularity} + 1) / ({max_popularity} - {min_popularity})) + 2 * (1 - ((q.depth - {min_depth}) / ({max_depth} - {min_depth}))), 0.5) as score
             from ordered_leaves l
             join quiz_leaves_by_ott q on q.leaf_id = l.id
             join images_by_ott on l.ott = images_by_ott.ott 
@@ -172,19 +169,19 @@ def get_quiz_species():
             join (select max(popularity) as max_popularity, min(popularity) as min_popularity from ordered_leaves inner_leaves where inner_leaves.id between {leaf_left} and {leaf_right}) pop
             where l.id between {leaf_left} and {leaf_right} and best_any = 1
             group by l.ott
-            order by score * rand() desc
+            order by rand() * score desc
             limit 1
             '''.format(leaf_left=node_right.leaf_lft, leaf_right=node_right.leaf_rgt, min_depth=min_depth, max_depth=max_depth, min_popularity=min_popularity, max_popularity=max_popularity)
         )
 
         rand = random()
-        leaf_1 = left_leaves_response[1] if rand > 0.5 else right_leaves_response[0]
-        leaf_2 = left_leaves_response[1] if rand <= 0.5 else right_leaves_response[0]
+        leaf_1 = leaf_2_response[0] if rand > 0.5 else right_leaves_response[0]
+        leaf_2 = leaf_2_response[0] if rand <= 0.5 else right_leaves_response[0]
 
         print(leaf_1)
 
         return dict(
-            leaf_compare=format_leaf(left_leaves_response[0]),
+            leaf_compare=format_leaf(leaf_1_response[0]),
             leaf_1=format_leaf(leaf_1),
             leaf_2=format_leaf(leaf_2),
         )
